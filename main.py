@@ -31,6 +31,17 @@ def retrieve_phone_code(driver) -> str:
 class UrbanRoutesPage:
     from_field = (By.ID, 'from')
     to_field = (By.ID, 'to')
+    phone_field = (By.ID, 'phone')
+    phone_confirm_button = (By.ID, 'phone-confirm')
+    code_field = (By.ID, 'code')
+    comment_field = (By.XPATH, '//textarea[@id="comment"]')
+    blanket_button = (By.ID, 'comfort')
+    ice_cream_button = (By.CLASS_NAME, 'ice-cream')
+    order_button = (By.ID, 'order')
+    driver_info = (By.CLASS_NAME, 'driver-info')
+    card_button = (By.ID, 'card')
+    card_number_input = (By.CLASS_NAME, 'card-number-input')
+    submit_card_button = (By.ID, 'submit-card')
 
     def __init__(self, driver):
         self.driver = driver
@@ -64,59 +75,61 @@ class TestUrbanRoutes:
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
         cls.driver = webdriver.Chrome(options=options)
 
+    def setup_method(self):
+        self.driver.get(data.urban_routes_url)
+        self.page = UrbanRoutesPage(self.driver)
+        self.wait = WebDriverWait(self.driver, 10)
+
     def test_set_route(self):
-        self.driver.get(data.urban_routes_url)
-        page = UrbanRoutesPage(self.driver)
-        page.set_from(data.address_from)
-        page.set_to(data.address_to)
-        assert page.get_from() == data.address_from
-        assert page.get_to() == data.address_to
+        self.page.set_from(data.address_from)
+        self.page.set_to(data.address_to)
+        assert self.page.get_from() == data.address_from
+        assert self.page.get_to() == data.address_to
 
-    def test_order_taxi(self):
-        self.driver.get(data.urban_routes_url)
-        wait = WebDriverWait(self.driver, 10)
-        page = UrbanRoutesPage(self.driver)
+    def test_select_plan(self):
+        plan_button = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-for="tariff-card-4"]')))
+        plan_button.click()
+        assert 'selected' in plan_button.get_attribute('class')
 
-        # Dirección
-        page.set_from(data.address_from)
-        page.set_to(data.address_to)
+    def test_fill_phone_number(self):
+        self.page.driver.find_element(*self.page.phone_field).send_keys(data.phone_number)
+        self.page.driver.find_element(*self.page.phone_confirm_button).click()
+        assert self.wait.until(EC.presence_of_element_located(self.page.code_field))
 
-        # Seleccionar tarifa Comfort
-        wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[data-for="tariff-card-4"]'))).click()
-
-        # Número de teléfono
-        wait.until(EC.element_to_be_clickable((By.ID, 'phone'))).send_keys(data.phone_number)
-        wait.until(EC.element_to_be_clickable((By.ID, 'phone-confirm'))).click()
-
-        # Obtener código SMS
-        code = retrieve_phone_code(self.driver)
-        wait.until(EC.element_to_be_clickable((By.ID, 'code'))).send_keys(code)
-
-        # Agregar tarjeta
-        wait.until(EC.element_to_be_clickable((By.ID, 'card'))).click()
-        wait.until(EC.element_to_be_clickable((By.CLASS_NAME, 'card-number-input'))).send_keys(data.card_number)
-        cvv_field = wait.until(EC.element_to_be_clickable((By.ID, 'code')))
+    def test_fill_card(self):
+        self.page.driver.find_element(*self.page.card_button).click()
+        self.page.driver.find_element(*self.page.card_number_input).send_keys(data.card_number)
+        cvv_field = self.wait.until(EC.element_to_be_clickable(self.page.code_field))
         cvv_field.send_keys(data.card_code)
-        cvv_field.send_keys(Keys.TAB)  # para activar el botón "link"
-        wait.until(EC.element_to_be_clickable((By.ID, 'submit-card'))).click()
+        cvv_field.send_keys(Keys.TAB)
+        self.page.driver.find_element(*self.page.submit_card_button).click()
+        assert self.wait.until(EC.presence_of_element_located((By.XPATH, '//div[contains(@class, "card-item")]')))
 
-        # Escribir mensaje al conductor
-        wait.until(EC.presence_of_element_located((By.ID, 'comment'))).send_keys(data.message_for_driver)
+    def test_comment_for_driver(self):
+        comment_box = self.wait.until(EC.presence_of_element_located(self.page.comment_field))
+        comment_box.send_keys(data.message_for_driver)
+        assert comment_box.get_property('value') == data.message_for_driver
 
-        # Pedir manta y pañuelos
-        wait.until(EC.element_to_be_clickable((By.ID, 'comfort'))).click()
+    def test_order_blanket_and_handkerchiefs(self):
+        blanket_button = self.wait.until(EC.element_to_be_clickable(self.page.blanket_button))
+        blanket_button.click()
+        assert 'active' in blanket_button.get_attribute('class')
 
-        # Pedir 2 helados
-        ice_button = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, 'ice-cream')))
+    def test_order_2_ice_creams(self):
+        ice_button = self.wait.until(EC.element_to_be_clickable(self.page.ice_cream_button))
         ice_button.click()
-        ice_button.click()  # dos veces
+        ice_button.click()
+        count = len(self.page.driver.find_elements(By.XPATH, '//div[@class="ice-cream selected"]'))
+        assert count == 2
 
-        # Confirmar pedido
-        wait.until(EC.element_to_be_clickable((By.ID, 'order'))).click()
+    def test_car_search_model_appears(self):
+        self.page.driver.find_element(*self.page.order_button).click()
+        assert self.wait.until(EC.presence_of_element_located((By.XPATH, '//div[contains(@class, "car-model")]')))
 
-        # Esperar modal de conductor (opcional)
-        wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'driver-info')))
+    def test_driver_info_appears(self):
+        assert self.wait.until(EC.presence_of_element_located(self.page.driver_info))
 
     @classmethod
     def teardown_class(cls):
         cls.driver.quit()
+
